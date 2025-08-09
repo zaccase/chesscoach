@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Chess } from "chess.js"               // if this errors, use:  import { Chess } from "chess.js/dist/esm/chess.js"
 import { Chessboard } from "react-chessboard"
-import "./styles.css"
+import "./styles.css" 
 
 // Config
 const ELO_PRESETS = [800, 1000, 1200, 1400, 1600, 1800, 2000, 2200]
