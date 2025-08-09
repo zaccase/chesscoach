@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Chess } from "chess.js"               // if this errors, try:  import { Chess } from "chess.js/dist/esm/chess.js"
+import { Chess } from "chess.js"               // if this errors, use:  import { Chess } from "chess.js/dist/esm/chess.js"
 import { Chessboard } from "react-chessboard"
 import "./styles.css"
 
-// ---- Config ----
+// Config
 const ELO_PRESETS = [800, 1000, 1200, 1400, 1600, 1800, 2000, 2200]
 const DEFAULT_ELO = 1200
-const MOVETIME_MS = 450          // analysis time per call (keeps UI snappy)
-const MULTIPV = 3                // # of candidate lines for hints
-const MAX_HINTS = 3              // show top N hints
+const MOVETIME_MS = 450
+const MULTIPV = 3
+const MAX_HINTS = 3
 
 // Small local opening list
 const OPENINGS = [
@@ -23,10 +23,10 @@ const OPENINGS = [
   { eco: "D06", name: "Slav Defense", pgn: "d4 d5 c4 c6" },
   { eco: "D20", name: "Queen's Gambit Accepted", pgn: "d4 d5 c4 dxc4" },
   { eco: "D30", name: "Queen's Gambit Declined", pgn: "d4 d5 c4 e6" },
-  { eco: "E60", name: "King's Indian Defense", pgn: "d4 Nf6 c4 g6" },
+  { eco: "E60", name: "King's Indian Defense", pgn: "d4 Nf6 c4 g6" }
 ]
 
-// ---- Helpers ----
+// Helpers
 function pgnTokens(pgn) {
   return pgn.replace(/[0-9]+\.|[?!+#]/g, "").trim().split(/\s+/).filter(Boolean)
 }
@@ -65,7 +65,9 @@ function gradeFromLoss(cpLoss) {
   if (loss <= 1.5) return "D"
   return "F"
 }
-function explainHeuristic(move, before, after) {
+function explainHeuristic(move, beforeFen, afterFen) {
+  const before = new Chess(beforeFen)
+  const after = new Chess(afterFen)
   const parts = []
   if (move.flags?.includes("c")) parts.push("You captured material.")
   if (move.san.includes("+")) parts.push("You gave check.")
@@ -82,7 +84,7 @@ function explainHeuristic(move, before, after) {
   return parts.join(" ")
 }
 
-// ---- Stockfish adapter (uses CDN script included in index.html) ----
+// Stockfish adapter
 function useStockfish({ elo, multipv }) {
   const engineRef = useRef(null)
   const [ready, setReady] = useState(false)
@@ -92,7 +94,7 @@ function useStockfish({ elo, multipv }) {
     if (engineRef.current) return
     const ctor = window.STOCKFISH || window.Stockfish || window.stockfish
     if (!ctor) {
-      console.error("Stockfish script not found. Make sure index.html includes the CDN <script> tag.")
+      console.error("Stockfish script not found. Make sure index.html includes the CDN script tag.")
       return
     }
     const eng = ctor()
@@ -104,9 +106,13 @@ function useStockfish({ elo, multipv }) {
         eng.postMessage("setoption name UCI_LimitStrength value true")
         eng.postMessage(`setoption name UCI_Elo value ${elo}`)
         eng.postMessage(`setoption name MultiPV value ${multipv}`)
+        // mark ready on uciok so production never stalls
+        setReady(true)
         eng.postMessage("isready")
       }
-      if (text.includes("readyok")) setReady(true)
+      if (text.includes("readyok")) {
+        setReady(true)
+      }
       listeners.current.forEach(fn => fn(text))
     }
     eng.onmessage = onMsg
@@ -114,7 +120,6 @@ function useStockfish({ elo, multipv }) {
     eng.postMessage("uci")
   }, [])
 
-  // sync options when user changes ELO or multipv
   useEffect(() => {
     if (!engineRef.current || !ready) return
     engineRef.current.postMessage(`setoption name UCI_Elo value ${elo}`)
@@ -126,7 +131,6 @@ function useStockfish({ elo, multipv }) {
     return () => { listeners.current = listeners.current.filter(f => f !== fn) }
   }, [])
 
-  // Quick analysis with movetime (never hangs)
   const analyze = useCallback((fen, movetime = MOVETIME_MS) => new Promise(resolve => {
     const eng = engineRef.current
     if (!eng) return resolve({ bestmove: null, cp: 0, lines: [] })
@@ -163,17 +167,13 @@ function useStockfish({ elo, multipv }) {
     eng.postMessage(`position fen ${fen}`)
     eng.postMessage(`go movetime ${movetime}`)
 
-    // safety timeout in case a message is dropped
-    setTimeout(() => {
-      off()
-      resolve({ bestmove, cp: lastCp, lines: lines.filter(Boolean) })
-    }, movetime + 600)
+    setTimeout(() => { off(); resolve({ bestmove, cp: lastCp, lines: lines.filter(Boolean) }) }, movetime + 600)
   }), [on])
 
   return { ready, analyze }
 }
 
-// ---- Main component ----
+// Main component
 export default function App() {
   const isMobile = useMemo(() => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent), [])
   const [game, setGame] = useState(() => new Chess())
@@ -189,7 +189,7 @@ export default function App() {
 
   const [engineEval, setEngineEval] = useState(0)
   const [pvLines, setPvLines] = useState([])
-  const [coach, setCoach] = useState([])        // { ply, move, grade, loss, note }
+  const [coach, setCoach] = useState([])
   const [candidates, setCandidates] = useState([])
 
   const engine = useStockfish({ elo, multipv: MULTIPV })
@@ -197,7 +197,7 @@ export default function App() {
   const currentSAN = useMemo(() => game.history({ verbose: true }).map(m => m.san), [game])
   const openingInfo = useMemo(() => detectOpening(currentSAN), [currentSAN])
 
-  // keep a lightweight evaluation current
+  // keep eval current
   useEffect(() => {
     let alive = true
     const run = async () => {
@@ -207,16 +207,16 @@ export default function App() {
       setEngineEval(res.cp || 0)
       setPvLines(res.lines || [])
     }
-    const t = setTimeout(run, 120)   // small debounce
+    const t = setTimeout(run, 120)
     return () => { alive = false; clearTimeout(t) }
   }, [fen, engine.ready])
 
   const evalPercent = useMemo(() => {
-    const t = Math.tanh((engineEval || 0) / 600)   // compress to 0..100
+    const t = Math.tanh((engineEval || 0) / 600)
     return Math.round((t + 1) * 50)
   }, [engineEval])
 
-  // Engine plays a reply at your chosen ELO
+  // engine plays a move
   const engineMove = useCallback(async () => {
     if (!engine.ready || game.isGameOver()) return
     const res = await engine.analyze(game.fen(), MOVETIME_MS)
@@ -228,7 +228,7 @@ export default function App() {
     }
   }, [engine.ready, game])
 
-  // Ask side on start
+  // start new game with side prompt
   const newGame = (color) => {
     const g = new Chess()
     setGame(g)
@@ -236,49 +236,52 @@ export default function App() {
     setCoach([])
     setOrientation(color)
     setSidePickerOpen(false)
-    if (color === "black") setTimeout(engineMove, 150)  // engine opens as White
+    if (color === "black") setTimeout(engineMove, 150)
   }
 
-  // Player move handler with correct grading and “best move was…”
+  // player move + grading + better move advice
   const onPieceDrop = async (sourceSquare, targetSquare) => {
-    // analyze BEFORE move, to get advice and baseline eval
-    const pre = engine.ready ? await engine.analyze(game.fen(), MOVETIME_MS) : { cp: 0, bestmove: null, lines: [] }
+    const beforeFen = game.fen()
+
+    // get advice before move
+    const pre = engine.ready ? await engine.analyze(beforeFen, MOVETIME_MS) : { cp: 0, bestmove: null, lines: [] }
     const cpBefore = pre.cp || 0
     const bestUci = pre.bestmove
     const bestSAN = (() => {
       if (!bestUci) return null
-      const tmp = new Chess(game.fen())
+      const tmp = new Chess(beforeFen)
       const mv = tmp.moves({ verbose: true }).find(m => m.from + m.to + (m.promotion || "") === bestUci)
       return mv?.san || null
     })()
 
-    // try the player's move
+    // try player's move
     const moveObj = { from: sourceSquare, to: targetSquare, promotion: "q" }
     const move = game.move(moveObj)
     if (!move) return false
-    setGame(new Chess(game.fen()))
-    setFen(game.fen())
 
-    // analyze AFTER move, then convert eval to player's perspective
-    const post = engine.ready ? await engine.analyze(game.fen(), MOVETIME_MS) : { cp: cpBefore }
+    const afterFen = game.fen()
+    setGame(new Chess(afterFen))
+    setFen(afterFen)
+
+    // analyze after move, convert eval to player's perspective by negating
+    const post = engine.ready ? await engine.analyze(afterFen, MOVETIME_MS) : { cp: cpBefore }
     const cpAfter = post.cp || 0
-    const cpAfterFromPlayer = -cpAfter                 // side to move flipped, so negate
-
-    const cpLoss = cpBefore - cpAfterFromPlayer        // positive = your move worsened your eval
+    const cpAfterFromPlayer = -cpAfter
+    const cpLoss = cpBefore - cpAfterFromPlayer
     const grade = gradeFromLoss(cpLoss)
 
-    const heur = explainHeuristic(move, new Chess(), new Chess(game.fen()))
+    const heur = explainHeuristic(move, beforeFen, afterFen)
     const better = bestSAN && (bestUci !== (move.from + move.to + (move.promotion || ""))) ? `Stronger was ${bestSAN}. ` : ""
     const note = `${better}${heur}`.trim()
 
     setCoach(f => [...f, { ply: game.history().length, move: move.san, grade, loss: cpLoss, note }])
 
-    // have engine reply
+    // engine replies
     await engineMove()
     return true
   }
 
-  // Unlimited undo (rewind both sides if possible)
+  // undo both sides when possible
   const onUndo = () => {
     if (game.history().length === 0) return
     game.undo()
