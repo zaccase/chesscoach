@@ -8,7 +8,7 @@ const ELO_PRESETS = [800, 1000, 1200, 1400, 1600, 1800, 2000, 2200]
 const DEFAULT_ELO = 1200
 const MOVETIME_MS = 450
 const MULTIPV = 3
-const MAX_HINTS = 3
+const MAX_HINTS = 4
 
 // Small local opening list
 const OPENINGS = [
